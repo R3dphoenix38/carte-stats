@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Carte de stats</title>
+<meta name="theme-color" content="#167A68">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Stats">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Plan : fiche de personnage sobre. Carte radiale en haut, détails en dessous, une couleur par pôle (physique, mental, savoir-faire). */
+:root{
+  --bg:#F1F2EE; --surface:#FFFFFF; --ink:#1A1E1C; --muted:#5C655F; --line:#D8DCD4; --soft:#E7EAE3;
+  --phys:#167A68; --mental:#5947C4; --savoir:#A86E17; --danger:#B3261E; --lg-am:#2563C9; --lg-pro:#B8860B;
+  --display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#111413; --surface:#1A1E1D; --ink:#E8EBE7; --muted:#9BA49F; --line:#2F3533; --soft:#232826;
+    --phys:#45C2A6; --mental:#A194F4; --savoir:#E3A84E; --danger:#F2867E; --lg-am:#7AA7F0; --lg-pro:#E5BE4E; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#111413; --surface:#1A1E1D; --ink:#E8EBE7; --muted:#9BA49F; --line:#2F3533; --soft:#232826;
+  --phys:#45C2A6; --mental:#A194F4; --savoir:#E3A84E; --danger:#F2867E; --lg-am:#7AA7F0; --lg-pro:#E5BE4E; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.5;-webkit-tap-highlight-color:transparent}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--mental);outline-offset:2px}
+.wrap{max-width:560px;margin:0 auto;padding:12px 16px 48px;display:flex;flex-direction:column;gap:14px}
+.crumbs{display:flex;flex-wrap:wrap;align-items:center;gap:4px;font-family:var(--display);font-size:20px;font-weight:600;letter-spacing:.01em}
+.crumbs button{background:none;border:0;padding:2px 4px;border-radius:6px;color:var(--muted)}
+.crumbs button[aria-current="page"]{color:var(--ink)}
+.crumbs .sep{color:var(--line)}
+.views{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;background:var(--soft);border-radius:10px;padding:4px}
+.views button{border:0;background:none;border-radius:7px;padding:8px 6px;font-size:14px;font-weight:500;color:var(--muted)}
+.views button[aria-pressed="true"]{background:var(--surface);color:var(--ink)}
+.banner{background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:14px}
+.banner[hidden]{display:none}
+.map{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:6px 4px 2px}
+.map svg{display:block;width:100%;height:auto;touch-action:manipulation}
+.map svg text{font-family:var(--body)}
+.map .tap{cursor:pointer}
+.legend{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--muted);padding:2px 10px 6px}
+.guide{fill:none;stroke:var(--line);stroke-width:1}
+.guide-pro{stroke:var(--ink);stroke-width:1.5;opacity:.55}
+.list{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.row{display:grid;grid-template-columns:minmax(0,1fr) 80px 58px;align-items:center;gap:10px;padding:11px 14px;border:0;border-top:1px solid var(--line);background:none;text-align:left;width:100%}
+.row:first-child{border-top:0}
+.row:hover{background:var(--soft)}
+.row[aria-pressed="true"]{background:var(--soft)}
+.row .nm{font-weight:500;overflow-wrap:anywhere}
+.row .hint{display:block;font-size:12px;color:var(--muted);font-weight:400}
+.bar{height:6px;border-radius:3px;background:var(--soft);position:relative;overflow:hidden}
+.bar i{position:absolute;inset:0 auto 0 0;border-radius:3px}
+.row .sc{font-family:var(--display);font-size:22px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+.row .sc.none{color:var(--muted);font-size:18px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:14px}
+.panel h2{font-family:var(--display);font-weight:600;font-size:26px;line-height:1.1;margin:0;text-wrap:balance}
+.panel h3{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0;font-weight:600}
+.panel p{margin:0}
+.muted{color:var(--muted);font-size:14px}
+.head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+.big{font-family:var(--display);font-size:44px;font-weight:600;line-height:1;font-variant-numeric:tabular-nums;text-align:right}
+.big small{font-size:18px;color:var(--muted);font-weight:500}
+.pill{display:inline-block;font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--soft);color:var(--ink);white-space:nowrap}
+form{display:flex;flex-direction:column;gap:8px}
+.fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
+.fields.one{grid-template-columns:minmax(0,1fr) auto}
+label{font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+input[type=text],input[type=date],input[type=number]{width:100%;min-width:0;height:42px;padding:0 10px;border:1px solid var(--line);border-radius:9px;background:var(--bg)}
+.btn{height:42px;padding:0 16px;border-radius:9px;border:1px solid var(--line);background:var(--surface);font-weight:500}
+.btn.main{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.btn.small{height:32px;padding:0 10px;font-size:13px}
+.btn.danger{color:var(--danger)}
+.err{color:var(--danger);font-size:13px;min-height:0}
+.err:empty{display:none}
+.ladder{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.ladder div{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:10px;padding:7px 12px;border-top:1px solid var(--line);font-size:14px;align-items:center}
+.ladder div:first-child{border-top:0}
+.ladder b{font-family:var(--display);font-size:18px;font-weight:600;font-variant-numeric:tabular-nums}
+.ladder .v{font-variant-numeric:tabular-nums;text-align:right}
+.ladder .you{background:var(--soft);font-weight:500}
+.ladder .pro{border-top:1px dashed var(--muted)}
+.hist{display:flex;flex-direction:column;gap:0}
+.hist div{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--line);font-size:14px;font-variant-numeric:tabular-nums}
+.hist div:first-child{border-top:0}
+.hist .d{color:var(--muted)}
+.x{background:none;border:0;color:var(--muted);width:32px;height:32px;border-radius:8px;font-size:18px}
+.x:hover{background:var(--soft);color:var(--danger)}
+.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}
+.cal button{aspect-ratio:1;border-radius:7px;border:1px solid var(--line);background:var(--bg);font-size:11px;color:var(--muted);padding:0}
+.cal button.on{background:var(--mental);border-color:var(--mental);color:#fff}
+.cal button.today{outline:2px solid var(--ink);outline-offset:1px}
+.cal button.before{opacity:.35}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{border:1px dashed var(--line);background:none;border-radius:999px;padding:5px 11px;font-size:13px}
+.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.tile{background:var(--soft);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:2px}
+.tile span{font-size:12px;color:var(--muted)}
+.tile b{font-family:var(--display);font-size:28px;font-weight:600;font-variant-numeric:tabular-nums}
+.rec{font-size:14px;border-left:3px solid var(--line);padding-left:10px}
+.rec a{color:inherit}
+@media (prefers-reduced-motion:no-preference){.map svg .br{transition:opacity .2s}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav class="crumbs" id="crumbs" aria-label="Position dans la carte"></nav>
+  <div class="views" role="group" aria-label="Ligue de la carte"><button type="button" id="vDepart" data-view="depart" aria-pressed="true">Ligue Départ</button><button type="button" id="vAmateur" data-view="amateur" aria-pressed="false">Élite amateur</button><button type="button" id="vPro" data-view="pro" aria-pressed="false">Ligue Pro</button></div>
+  <div class="banner" id="banner" hidden></div>
+  <section class="map" aria-label="Carte">
+    <svg id="map" viewBox="0 0 400 340" role="img" aria-label="Carte radiale des statistiques"></svg>
+    <div class="legend"><span>Longueur de branche = note sur 100</span><span id="legRing">Anneaux : 50, 80 (pointillé, zone pro) et 100</span></div>
+  </section>
+  <section class="list" id="list" aria-label="Ramifications"></section>
+  <section class="panel" id="panel" aria-live="polite"></section>
+</div>
+<script src="catalog.js"></script>
+<script>
+"use strict";
+const NODES={
+  moi:{name:"Moi",kids:["physique","savoir"],ring:"mental"},
+  mental:{name:"Mental",kids:["volonte","cognitif"],pole:"mental",parent:"moi",about:"L'anneau autour de toi : la base avant de développer le reste."},
+  volonte:{name:"Volonté",habits:true,pole:"mental",parent:"mental",about:"Tes habitudes tenues dans le temps. Chaque habitude est notée sur ta série en cours, avec un filet de sécurité selon ta régularité sur 30 jours."},
+  cognitif:{name:"Cognitif",group:"cognitif",pole:"mental",parent:"mental",about:"Mémoire et concentration, mesurées avec des tests en ligne gratuits."},
+  physique:{name:"Physique",kids:["vitesse","force","endurance","agilite"],extra:["mental"],pole:"phys",parent:"moi",about:"La branche Mental, qui entoure le Moi, apparaît aussi ici comme cinquième branche : elle compte dans ta note Physique."},
+  vitesse:{name:"Vitesse",group:"vitesse",pole:"phys",parent:"physique"},
+  force:{name:"Force",kids:["pousser","tirer","jambes","tronc"],pole:"phys",parent:"physique",about:"Chaque muscle est noté à partir des exercices qui le font travailler, au prorata de sa part dans chaque exercice. Les charges sont rapportées à ton poids de corps."},
+  pousser:{name:"Pousser",kids:["m_pecs","m_epaules","m_triceps"],pole:"phys",parent:"force"},
+  tirer:{name:"Tirer",kids:["m_dorsaux","m_hautdos","m_biceps","m_avantbras"],pole:"phys",parent:"force"},
+  jambes:{name:"Jambes",kids:["m_quadri","m_ischios","m_fessiers","m_mollets"],pole:"phys",parent:"force"},
+  tronc:{name:"Tronc",kids:["m_abdos","m_lombaires"],pole:"phys",parent:"force"},
+  m_pecs:{name:"Pectoraux",muscle:"pecs",pole:"phys",parent:"pousser"},
+  m_epaules:{name:"Épaules",muscle:"epaules",pole:"phys",parent:"pousser"},
+  m_triceps:{name:"Triceps",muscle:"triceps",pole:"phys",parent:"pousser"},
+  m_dorsaux:{name:"Dorsaux",muscle:"dorsaux",pole:"phys",parent:"tirer"},
+  m_hautdos:{name:"Haut du dos",muscle:"hautdos",pole:"phys",parent:"tirer"},
+  m_biceps:{name:"Biceps",muscle:"biceps",pole:"phys",parent:"tirer"},
+  m_avantbras:{name:"Avant-bras",muscle:"avantbras",pole:"phys",parent:"tirer"},
+  m_quadri:{name:"Quadriceps",muscle:"quadri",pole:"phys",parent:"jambes"},
+  m_ischios:{name:"Ischio-jambiers",muscle:"ischios",pole:"phys",parent:"jambes"},
+  m_fessiers:{name:"Fessiers",muscle:"fessiers",pole:"phys",parent:"jambes"},
+  m_mollets:{name:"Mollets",muscle:"mollets",pole:"phys",parent:"jambes"},
+  m_abdos:{name:"Abdominaux",muscle:"abdos",pole:"phys",parent:"tronc"},
+  m_lombaires:{name:"Lombaires",muscle:"lombaires",pole:"phys",parent:"tronc"},
+  endurance:{name:"Endurance",kids:["recuperation"],group:"endurance",pole:"phys",parent:"physique"},
+  recuperation:{name:"Récupération",group:"recuperation",pole:"phys",parent:"endurance"},
+  agilite:{name:"Agilité",kids:["souplesse","equilibre","coordination","agilite_pure"],pole:"phys",parent:"physique"},
+  souplesse:{name:"Souplesse",group:"souplesse",pole:"phys",parent:"agilite"},
+  equilibre:{name:"Équilibre",group:"equilibre",pole:"phys",parent:"agilite"},
+  coordination:{name:"Coordination",group:"coordination",pole:"phys",parent:"agilite"},
+  agilite_pure:{name:"Agilité pure",group:"agilite_pure",pole:"phys",parent:"agilite"},
+  savoir:{name:"Savoir-faire",empty:true,pole:"savoir",parent:"moi",about:"Métier, langues, manuel, numérique… Ce pôle sera défini plus tard, branche par branche, avec ses propres échelles (niveaux A1 à C2, diplômes, habilitations)."}
+};
+const LEVELS=[[0,"Très limité"],[25,"Sous la moyenne"],[50,"Moyenne non entraînée"],[70,"Entraîné"],[80,"Limite amateur"],[90,"Élite"],[100,"Record du monde"]];
+const STREAK=[[0,0],[50,7],[70,30],[80,90],[90,365],[100,1095]];
+const REG=[[0,0],[50,0.5],[65,0.9]];
+const HABIT_IDEAS=["Réveil sans snooze","Mobilité le matin","Lecture 10 min","Journal"];
+const C={x:200,y:170},RMIN=44,RMAX=106,OVF=28,W=400;
+
+const state={catalog:{},perfs:{},habits:{},sessions:{},profile:{},meta:null,node:"moi",sel:null,loaded:{},confirmDel:null};
+
+
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function dayStr(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
+function today(){const d=new Date();d.setHours(12,0,0,0);return d}
+function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x}
+function parseDay(s){const p=String(s).split("-").map(Number);return new Date(p[0],p[1]-1,p[2],12)}
+function fmtDay(s){try{return parseDay(s).toLocaleDateString("fr-FR",{day:"numeric",month:"short",year:"numeric"})}catch(e){return s}}
+function fmtNum(x,dec){return Number(x).toLocaleString("fr-FR",{maximumFractionDigits:dec==null?1:dec})}
+function fmtTime(s){
+  s=Math.round(s*100)/100;
+  if(s<60)return fmtNum(s,2)+" s";
+  const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s-h*3600-m*60,w=Math.floor(sec+1e-6),f=Math.round((sec-w)*100);
+  const ss=String(w).padStart(2,"0")+(f>0?","+String(f).padStart(2,"0"):"");
+  return (h?h+":"+String(m).padStart(2,"0"):String(m))+":"+ss;
+}
+function interp(anchors,v){
+  if(v==null||isNaN(v))return null;
+  for(let i=0;i<anchors.length-1;i++){
+    const s0=anchors[i][0],v0=anchors[i][1],s1=anchors[i+1][0],v1=anchors[i+1][1];
+    if(v>=Math.min(v0,v1)&&v<=Math.max(v0,v1)){return v1===v0?s1:s0+(v-v0)/(v1-v0)*(s1-s0)}
+  }
+  const first=anchors[0][1],last=anchors[anchors.length-1][1],asc=last>first;
+  if(asc)return v<first?0:100;
+  return v>first?0:100;
+}
+function levelOf(s){let l=LEVELS[0][1];for(const[a,n]of LEVELS){if(s>=a)l=n}return l}
+function poleColor(p){return p==="mental"?"var(--mental)":p==="savoir"?"var(--savoir)":"var(--phys)"}
+
+function splitAngle(h,L){const r=Math.min(1,Math.max(0,h/L));return 2*Math.acos(r)*180/Math.PI}
+function metric(ex,e){
+  if(ex.ratioBW){const bw=e.bw||state.profile.poids;return bw?e.v/bw:null}
+  if(ex.splitAngle){const L=e.leg||state.profile.jambe;return L?splitAngle(e.v,L):null}
+  return e.v;
+}
+function fmtMetric(ex,m){return ex.ratioBW?fmtNum(m,2)+"× ton poids":ex.splitAngle?fmtNum(m,0)+"° entre les jambes":""}
+const MUSCLES={pecs:"Pectoraux",epaules:"Épaules",triceps:"Triceps",dorsaux:"Dorsaux",hautdos:"Haut du dos",biceps:"Biceps",avantbras:"Avant-bras",quadri:"Quadriceps",ischios:"Ischio-jambiers",fessiers:"Fessiers",mollets:"Mollets",abdos:"Abdominaux",lombaires:"Lombaires"};
+const ZONES=[["Bras",["biceps","triceps","avantbras"]],["Pectoraux",["pecs"]],["Épaules",["epaules"]],["Dos",["dorsaux","hautdos","lombaires"]],["Jambes",["quadri","ischios","fessiers","mollets"]],["Tronc",["abdos","lombaires"]]];
+function muscleScore(m){return nodeScore("m_"+m)}
+function liftId(name){
+  const n=norm(name);
+  for(const e of Object.values(state.catalog)){
+    if(e.group!=="muscu")continue;
+    if(norm(e.name)===n||(e.aliases||[]).some(a=>norm(a)===n))return e.id;
+  }
+  return null;
+}
+function norm(x){return String(x).normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim().replace(/\s+/g," ")}
+function oneRM(kg,reps){
+  if(reps<=1)return kg;
+  const e=kg*(1+reps/30);
+  if(reps<=10)return (e+kg*36/(37-reps))/2;
+  return e;
+}
+function sessionCands(id){
+  const out=[];
+  Object.values(state.sessions).forEach(s=>(s.sets||[]).forEach(st=>{
+    if(st.ex!==id)return;
+    const ex=state.catalog[id];if(!ex)return;
+    if(ex.bwReps){if(!st.kg)out.push({v:st.reps,d:s.d,est:true,set:st})}
+    else if(ex.ratioBW&&st.kg>0)out.push({v:oneRM(st.kg,st.reps),d:s.d,bw:st.bw,est:true,set:st});
+  }));
+  return out;
+}
+function exScore(id){
+  const ex=state.catalog[id],p=state.perfs[id];
+  const all=((p&&Array.isArray(p.entries))?p.entries:[]).concat(sessionCands(id));
+  if(!ex||!all.length)return null;
+  const cutoff=dayStr(addDays(today(),-365));let best=null;
+  for(const e of all){
+    if(e.d<cutoff)continue;
+    const m=metric(ex,e);if(m==null)continue;
+    const s=interp(ex.anchors,m);
+    if(s!=null&&(!best||s>best.score))best={score:s,entry:e,metric:m};
+  }
+  return best;
+}
+function habitStats(h){
+  const set=new Set(h.days||[]),t=today();
+  let streak=0,d=set.has(dayStr(t))?t:addDays(t,-1);
+  while(set.has(dayStr(d))){streak++;d=addDays(d,-1)}
+  const span=30;
+  let n=0;for(let i=0;i<span;i++){if(set.has(dayStr(addDays(t,-i))))n++}
+  const rate=n/span,sS=interp(STREAK,streak),rS=Math.min(65,interp(REG,rate));
+  return {streak,rate,n,span,score:Math.max(sS,rS),doneToday:set.has(dayStr(t))};
+}
+const LEAGUES={depart:{name:"Départ",short:"Élite am.",next:"amateur",col:"var(--phys)"},amateur:{name:"Élite amateur",next:"pro",col:"var(--lg-am)"},pro:{name:"Pro",next:null,col:"var(--lg-pro)"}};
+const LSHORT={depart:"Départ",amateur:"Élite am.",pro:"Pro"};
+function league(){const v=state.profile.vue;return v==="amateur"?"amateur":(v==="pro"||v==="monde")?"pro":"depart"}
+function amTop(ex){if(ex&&ex.amateur&&ex.amateur.v!=null){const t=interp(ex.anchors,ex.amateur.v);if(t>0)return t}return 80}
+function topOf(lg,ex,habit){if(lg==="pro")return 100;if(lg==="depart")return 70;return habit?90:amTop(ex)}
+function rel(w,ex,habit){
+  if(w==null)return null;
+  const lg=league(),T=topOf(lg,ex,habit);
+  if(w<=T)return w/T*100;
+  const nx=LEAGUES[lg].next;if(!nx)return 100;
+  const T2=topOf(nx,ex,habit);if(T2<=T)return 200;
+  return Math.min(200,100+(w-T)/(T2-T)*100);
+}
+function viewScore(ex,s){return rel(s,ex,false)}
+function viewHabit(s){return rel(s,null,true)}
+function nextL(){return LEAGUES[league()].next}
+function bigScore(v){if(v==null)return '—<small>/100</small>';if(v<=100.5)return Math.round(Math.min(v,100))+'<small>/100</small>';return '<span style="color:'+LEAGUES[nextL()].col+'">'+Math.round(v-100)+'</span><small> en '+esc(LEAGUES[nextL()].name)+'</small>'}
+function upgradeHint(){
+  const lg=league(),nx=LEAGUES[lg].next;if(!nx)return "";
+  const sc=["mental","vitesse","force","endurance","agilite"].map(nodeScore).filter(x=>x!=null);
+  const over=sc.filter(x=>x>100.5).length;
+  if(sc.length<2||over*2<sc.length)return "";
+  return '<div class="banner" style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap"><span>'+over+' branche'+(over>1?"s":"")+' sur '+sc.length+' dépasse'+(over>1?"nt":"")+' ta ligue. Tu peux passer en ligue '+esc(LEAGUES[nx].name)+'.</span><button type="button" class="btn small" data-view="'+nx+'">Monter de ligue</button></div>';
+}
+function shortScore(v){if(v==null)return "—";if(v<=100.5)return String(Math.round(Math.min(v,100)));return "↑"+Math.round(v-100)}
+function fmtScore(v){if(v==null)return "—";if(v<=100.5)return String(Math.round(Math.min(v,100)));return LSHORT[nextL()]+" "+Math.round(v-100)}
+function kids(id){
+  const n=NODES[id],out=[];
+  (n.kids||[]).forEach(k=>out.push({type:"node",id:k}));
+  (n.extra||[]).forEach(k=>out.push({type:"node",id:k}));
+  if(n.muscle)Object.values(state.catalog).filter(e=>e.muscles&&(e.muscles[n.muscle]||0)>=0.1).sort((a,b)=>b.muscles[n.muscle]-a.muscles[n.muscle]).forEach(e=>out.push({type:"ex",id:e.id}));
+  if(n.group)Object.values(state.catalog).filter(e=>e.group===n.group).sort((a,b)=>(a.order||0)-(b.order||0)).forEach(e=>out.push({type:"ex",id:e.id}));
+  if(n.habits)Object.keys(state.habits).sort((a,b)=>String(state.habits[a].created||"").localeCompare(String(state.habits[b].created||""))).forEach(h=>out.push({type:"habit",id:h}));
+  return out;
+}
+function childScore(c){
+  if(c.type==="node")return nodeScore(c.id);
+  if(c.type==="ex"){const r=exScore(c.id);return r?viewScore(state.catalog[c.id],r.score):null}
+  if(c.type==="habit")return viewHabit(habitStats(state.habits[c.id]).score);
+  return null;
+}
+function nodeScore(id){
+  const mu=NODES[id].muscle;
+  if(mu){
+    let sw=0,ss=0;
+    kids(id).forEach(c=>{const s=childScore(c);if(s!=null){const w=state.catalog[c.id].muscles[mu];sw+=w;ss+=w*s}});
+    return sw?ss/sw:null;
+  }
+  const sc=kids(id).map(childScore).filter(s=>s!=null);
+  return sc.length?sc.reduce((a,b)=>a+b,0)/sc.length:null;
+}
+function childName(c){
+  if(c.type==="node")return NODES[c.id].name;
+  if(c.type==="ex")return state.catalog[c.id].name;
+  return state.habits[c.id].name;
+}
+function childHint(c){
+  if(c.type==="node"){
+    if(NODES[c.id].empty)return "à définir";
+    const k=kids(c.id),m=k.filter(x=>childScore(x)!=null).length;
+    return m+" mesurée"+(m>1?"s":"")+" sur "+k.length;
+  }
+  if(c.type==="ex"){const r=exScore(c.id),ex=state.catalog[c.id],mu=NODES[state.node].muscle,pre=mu&&ex.muscles?"compte à "+Math.round(ex.muscles[mu]*100)+" % · ":"";return pre+(r?"meilleur : "+fmtVal(ex,r.entry.v)+(r.entry.est&&!ex.bwReps?" (estimé)":""):"pas encore de relevé")}
+  const s=habitStats(state.habits[c.id]);return "série : "+s.streak+" j"+(s.doneToday?" · fait aujourd'hui":"");
+}
+function poleOf(c){return c.type==="node"?(NODES[c.id].pole||"phys"):(NODES[state.node].pole||"phys")}
+function fmtVal(ex,v){
+  if(ex.kind==="time")return fmtTime(v);
+  return fmtNum(v,ex.dec==null?1:ex.dec)+(ex.unitShort?" "+ex.unitShort:"");
+}
+function fmtAnchor(ex,v){
+  if(ex.splitAngle){
+    let s=fmtNum(v,0)+"°";
+    if(state.profile.jambe)s+=" ≈ "+fmtNum(state.profile.jambe*Math.cos(v*Math.PI/360),0)+" cm du sol";
+    return s;
+  }
+  if(ex.ratioBW){
+    let s=fmtNum(v,2)+"× ton poids";
+    if(state.profile.poids)s+=" ≈ "+fmtNum(v*state.profile.poids,0)+" kg";
+    return s;
+  }
+  return fmtVal(ex,v);
+}
+function parseVal(ex,str){
+  str=String(str).trim().replace(/,/g,".");if(!str)return null;
+  if(ex.kind==="time"&&str.includes(":")){
+    const parts=str.split(":").map(Number);if(parts.some(isNaN))return NaN;
+    return parts.reduce((a,p)=>a*60+p,0);
+  }
+  return Number(str);
+}
+
+function arcPath(r,frac){
+  frac=Math.max(0,Math.min(1,frac));
+  if(frac>=0.999)return null;
+  const a0=-Math.PI/2,a1=a0+frac*2*Math.PI;
+  const x0=C.x+r*Math.cos(a0),y0=C.y+r*Math.sin(a0),x1=C.x+r*Math.cos(a1),y1=C.y+r*Math.sin(a1);
+  return "M"+x0.toFixed(1)+" "+y0.toFixed(1)+" A"+r+" "+r+" 0 "+(frac>0.5?1:0)+" 1 "+x1.toFixed(1)+" "+y1.toFixed(1);
+}
+function renderMap(){
+  const id=state.node,ks=kids(id),n=ks.length,isRoot=id==="moi";
+  const rmin=isRoot?RMIN+8:RMIN;
+  let h="";
+  [[50,""],[100,"guide-pro"]].forEach(([s,cls])=>{
+    const r=rmin+(RMAX-rmin)*s/100;
+    h+='<circle cx="'+C.x+'" cy="'+C.y+'" r="'+r.toFixed(1)+'" class="guide '+cls+'"/>';
+  });
+  const angles=isRoot?[Math.PI,0]:ks.map((_,i)=>-Math.PI/2+i*2*Math.PI/Math.max(n,1));
+  const pts=[];let hb="";
+  ks.forEach((c,i)=>{
+    const a=angles[i],s=childScore(c),col=poleColor(poleOf(c)),none=s==null;
+    const over=!none&&s>100.5,base=none?null:Math.min(s,100);
+    const L=none?rmin+22:rmin+(RMAX-rmin)*base/100+(over?OVF*(s-100)/100:0);
+    const Lb=none?L:rmin+(RMAX-rmin)*base/100;
+    const cs=Math.cos(a),sn=Math.sin(a);
+    const x0=C.x+(isRoot?44:32)*cs,y0=C.y+(isRoot?44:32)*sn,x=C.x+L*cs,y=C.y+L*sn;
+    pts.push(none?[C.x+rmin*cs,C.y+rmin*sn]:[x,y]);
+    const sel=state.sel&&state.sel.type===c.type&&state.sel.id===c.id;
+    const dim=state.sel&&!sel;
+    const lr=L+15,ly=C.y+lr*sn,anchor=cs>0.35?"start":cs<-0.35?"end":"middle";
+    let lx=C.x+lr*cs;const nm0=childName(c),nm=nm0.length>18?nm0.slice(0,17)+"…":nm0;const est=nm.length*7.6;
+    if(anchor==="end"&&lx-est<4)lx=est+4;
+    if(anchor==="start"&&lx+est>W-4)lx=W-4-est;
+    if(anchor==="middle")lx=Math.min(Math.max(lx,est/2+4),W-4-est/2);
+    const dy=sn<-0.6?-6:sn>0.6?12:4;
+    hb+='<g class="tap br" data-type="'+c.type+'" data-id="'+esc(c.id)+'" opacity="'+(dim?0.3:1)+'">';
+    hb+='<line x1="'+C.x+'" y1="'+C.y+'" x2="'+(C.x+(RMAX+10)*cs).toFixed(1)+'" y2="'+(C.y+(RMAX+10)*sn).toFixed(1)+'" stroke="transparent" stroke-width="30"/>';
+    const sw=sel?7:c.type==="node"?6:4,xb=C.x+Lb*cs,yb=C.y+Lb*sn;
+    hb+='<line x1="'+x0.toFixed(1)+'" y1="'+y0.toFixed(1)+'" x2="'+xb.toFixed(1)+'" y2="'+yb.toFixed(1)+'" stroke="'+(none?"var(--muted)":col)+'" stroke-width="'+sw+'" stroke-linecap="round"'+(none?' stroke-dasharray="4 5" opacity=".6"':'')+'/>';
+    if(over)h+='<line x1="'+xb.toFixed(1)+'" y1="'+yb.toFixed(1)+'" x2="'+x.toFixed(1)+'" y2="'+y.toFixed(1)+'" stroke="'+LEAGUES[nextL()].col+'" stroke-width="'+(sw+2)+'" stroke-linecap="round"/>';
+    const ec=none?"var(--muted)":over?LEAGUES[nextL()].col:col;
+    if(c.type==="node")h+='<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="8" fill="var(--surface)" stroke="'+ec+'" stroke-width="3"/>';
+    else h+='<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="5.5" fill="'+ec+'"/>';
+    hb+='<text x="'+lx.toFixed(1)+'" y="'+(ly+dy-7).toFixed(1)+'" text-anchor="'+anchor+'" font-size="14" font-weight="600" fill="var(--ink)">'+esc(nm)+'</text>';
+    hb+='<text x="'+lx.toFixed(1)+'" y="'+(ly+dy+8).toFixed(1)+'" text-anchor="'+anchor+'" font-size="12" fill="var(--muted)">'+(none?(c.type==="node"&&NODES[c.id].empty?"à définir":"non mesuré"):over?"↑ "+fmtScore(s):Math.round(s)+"/100")+'</text>';
+    hb+='</g>';
+  });
+  if(!isRoot&&pts.length>=3){const pc=poleColor(NODES[id].pole||"phys");h+='<polygon points="'+pts.map(p=>p[0].toFixed(1)+","+p[1].toFixed(1)).join(" ")+'" fill="'+pc+'" fill-opacity="0.14" stroke="'+pc+'" stroke-opacity="0.55" stroke-width="1.5" stroke-linejoin="round"/>'}
+  h+=hb;
+  if(n===0&&!NODES[id].empty&&!NODES[id].habits){
+    h+='<text x="'+C.x+'" y="'+(C.y+70)+'" text-anchor="middle" font-size="13" fill="var(--muted)">Aucun exercice chargé</text>';
+  }
+  if(isRoot){
+    const ms=nodeScore("mental");
+    h+='<g class="tap" data-type="node" data-id="mental">';
+    h+='<circle cx="'+C.x+'" cy="'+C.y+'" r="36" fill="none" stroke="var(--soft)" stroke-width="10"/>';
+    if(ms!=null){const p=arcPath(36,Math.min(ms,100)/100);h+=p?'<path d="'+p+'" fill="none" stroke="var(--mental)" stroke-width="10" stroke-linecap="round"/>':'<circle cx="'+C.x+'" cy="'+C.y+'" r="36" fill="none" stroke="var(--mental)" stroke-width="10"/>'}
+    h+='<circle cx="'+C.x+'" cy="'+C.y+'" r="48" fill="transparent"/>';
+    h+='<text x="'+C.x+'" y="'+(C.y-52)+'" text-anchor="middle" font-size="12" font-weight="600" fill="var(--mental)">Mental '+(ms==null?"·  non mesuré":ms>100.5?"↑ "+fmtScore(ms):Math.round(ms)+"/100")+'</text>';
+    h+='</g>';
+  }
+  const own=isRoot?null:nodeScore(id),col=poleColor(NODES[id].pole);
+  h+='<circle cx="'+C.x+'" cy="'+C.y+'" r="'+(isRoot?26:30)+'" fill="var(--surface)" stroke="'+(isRoot?"var(--ink)":col)+'" stroke-width="2.5"/>';
+  const label=isRoot?(state.profile.prenom||"Moi"):(own==null?"—":own>100.5?"↑":String(Math.round(own)));
+  h+='<text x="'+C.x+'" y="'+(C.y+(isRoot?5:8))+'" text-anchor="middle" font-size="'+(isRoot?14:22)+'" font-weight="600" fill="var(--ink)" style="font-family:var(--display)">'+esc(label)+'</text>';
+  $("#map").innerHTML=h;
+  $("#map").setAttribute("aria-label","Carte : "+NODES[id].name);
+}
+function renderCrumbs(){
+  const path=[];let id=state.node;
+  while(id){path.unshift(id);id=NODES[id].parent}
+  $("#crumbs").innerHTML=path.map((p,i)=>(i?'<span class="sep">›</span>':"")+'<button type="button" data-go="'+p+'"'+(p===state.node?' aria-current="page"':"")+'>'+esc(p==="moi"?(state.profile.prenom||"Moi"):NODES[p].name)+'</button>').join("");
+}
+function renderList(){
+  const ks=kids(state.node);
+  if(!ks.length){$("#list").hidden=true;return}
+  $("#list").hidden=false;
+  let h="";
+  if(state.node==="moi"){
+    const ms=nodeScore("mental");
+    h+=rowHtml({type:"node",id:"mental"},ms,"var(--mental)");
+  }
+  ks.forEach(c=>{h+=rowHtml(c,childScore(c),poleColor(poleOf(c)))});
+  $("#list").innerHTML=h;
+}
+function rowHtml(c,s,col){
+  const sel=state.sel&&state.sel.type===c.type&&state.sel.id===c.id;
+  return '<button type="button" class="row" data-type="'+c.type+'" data-id="'+esc(c.id)+'" aria-pressed="'+(sel?"true":"false")+'">'+
+    '<span class="nm">'+esc(childName(c))+'<span class="hint">'+esc(childHint(c))+'</span></span>'+
+    '<span class="bar"><i style="width:'+(s==null?0:Math.min(s,100).toFixed(1))+'%;background:'+(s!=null&&s>100.5?LEAGUES[nextL()].col:col)+'"></i></span>'+
+    '<span class="sc'+(s==null?" none":"")+'"'+(s!=null&&s>100.5?' style="color:'+LEAGUES[nextL()].col+'"':'')+' title="'+(s!=null&&s>100.5?esc(fmtScore(s)):"")+'">'+shortScore(s)+'</span></button>';
+}
+
+function renderPanel(){
+  const keep={},act=document.activeElement,actId=act&&act.id&&$("#panel").contains(act)?act.id:null;
+  $("#panel").querySelectorAll("input[id]").forEach(i=>{keep[i.id]=i.value});
+  let h="";
+  if(state.sel&&state.sel.type==="ex"&&state.catalog[state.sel.id])h=exPanel(state.sel.id);
+  else if(state.sel&&state.sel.type==="habit"&&state.habits[state.sel.id])h=habitPanel(state.sel.id);
+  else h=nodePanel(state.node);
+  $("#panel").innerHTML=h;
+  Object.keys(keep).forEach(k=>{const el=document.getElementById(k);if(el&&keep[k]!=="")el.value=keep[k]});
+  if(actId){const el=document.getElementById(actId);if(el)el.focus()}
+}
+function nodePanel(id){
+  const n=NODES[id];let h="";
+  if(id==="moi"){
+    const ms=nodeScore("mental"),ps=nodeScore("physique");
+    h+='<h2>Ta fiche</h2>'+upgradeHint();
+    const empty=!state.profile.prenom&&!Object.keys(state.perfs).length&&!Object.keys(state.habits).length&&!Object.keys(state.sessions).length;
+    if(empty)h+='<div class="banner"><strong>Bienvenue.</strong> Remplis ton profil en bas de cette page, choisis ta ligue en haut (Départ pour commencer), puis touche une branche pour faire tes premiers tests. Ta carte se remplit au fur et à mesure.</div>';
+    h+='<div class="tiles"><div class="tile"><span>Mental</span><b style="color:var(--mental)">'+shortScore(ms)+'</b></div><div class="tile"><span>Physique</span><b style="color:var(--phys)">'+shortScore(ps)+'</b></div><div class="tile"><span>Savoir-faire</span><b style="color:var(--savoir)">—</b></div></div>';
+    h+='<button type="button" class="btn" data-go="force">Journal de muscu</button>';
+    h+='<p class="muted">Touche une branche ou l\'anneau pour l\'ouvrir. Chaque note est la moyenne de ses ramifications mesurées. Un exercice compte avec ta meilleure performance des 12 derniers mois.</p>';
+    h+='<h3>Profil</h3><form id="fProfile" novalidate><div class="fields"><label for="pPrenom">Prénom<input type="text" id="pPrenom" autocomplete="given-name" value="'+esc(state.profile.prenom||"")+'"></label><label for="pPoids">Poids de corps (kg)<input type="text" inputmode="decimal" id="pPoids" placeholder="78" value="'+(state.profile.poids?fmtNum(state.profile.poids,1):"")+'"></label><label for="pTaille">Taille (cm)<input type="text" inputmode="decimal" id="pTaille" placeholder="178" value="'+(state.profile.taille?fmtNum(state.profile.taille,1):"")+'"></label><label for="pJambe">Longueur de jambe (cm)<input type="text" inputmode="decimal" id="pJambe" placeholder="84" value="'+(state.profile.jambe?fmtNum(state.profile.jambe,1):"")+'"></label></div><p class="muted">Le poids sert à noter la force à poids égal. La longueur de jambe se mesure debout, pieds nus, du sol à l\'entrejambe : elle sert à calculer l\'angle de tes grands écarts.</p><button class="btn" type="submit">Enregistrer le profil</button><p class="err" id="eProfile"></p></form>';
+    const m=state.meta;
+    h+='<h3>Sauvegarde</h3><p class="muted">Tes données restent sur cet appareil. Fais une sauvegarde de temps en temps pour ne rien perdre si tu changes de téléphone.</p>';
+    h+='<div class="fields"><button type="button" class="btn" data-export="1">Sauvegarder mes données</button><label class="btn" for="impFile" style="display:flex;align-items:center;justify-content:center;color:var(--ink);font-size:15px;cursor:pointer">Restaurer une sauvegarde</label></div><input type="file" id="impFile" accept="application/json,.json" style="display:none">';
+    if(state.pendingImport)h+='<div class="banner">Remplacer toutes tes données par la sauvegarde du '+esc(fmtDay(String(state.pendingImport.exported||"").slice(0,10)))+' ? <div class="fields" style="margin-top:8px"><button type="button" class="btn danger" data-import-ok="1">Remplacer</button><button type="button" class="btn" data-import-cancel="1">Annuler</button></div></div>';
+    h+='<p class="err" id="eImport"></p>';
+    h+='<h3>Références</h3><p class="muted">Le 100 de chaque exercice correspond au record du monde (hommes) ou, à défaut, au sommet humain connu. '+(m&&m.updated?"Références vérifiées le "+esc(fmtDay(m.updated))+".":"")+(m&&m.note?" "+esc(m.note):"")+'</p>';
+    return h;
+  }
+  const s=nodeScore(id),ks=kids(id),meas=ks.filter(c=>childScore(c)!=null).length;
+  h+='<div class="head"><div><h2>'+esc(n.name)+'</h2>'+(s!=null?'<span class="pill">'+esc(s>100.5?"Au-dessus de la ligue "+LEAGUES[league()].name:"Ligue "+LEAGUES[league()].name)+'</span>':"")+'</div><div class="big">'+bigScore(s)+'</div></div>';
+  if(n.about)h+='<p class="muted">'+esc(n.about)+'</p>';
+  if(n.muscle)h+='<p class="muted">Note = moyenne des exercices mesurés ('+meas+' sur '+ks.length+'), chacun pesant selon la part de ce muscle dans le mouvement : un exercice qui le fait travailler à 100 % compte quatre fois plus qu\'un exercice où il ne fait que 25 % du travail.</p>';
+  else if(!n.empty&&!n.habits)h+='<p class="muted">Note = moyenne des ramifications mesurées ('+meas+' sur '+ks.length+'). Touche un exercice pour ajouter un relevé.</p>';
+  if(id==="force"){
+    h+='<h3>Par zone</h3><div class="tiles">'+ZONES.map(([z,ms])=>{const sc=ms.map(muscleScore).filter(x=>x!=null);const v=sc.length?sc.reduce((a,b)=>a+b,0)/sc.length:null;return '<div class="tile"><span>'+esc(z)+'</span><b style="color:'+(v!=null&&v>100.5?LEAGUES[nextL()].col:"var(--phys)")+'">'+shortScore(v)+'</b></div>'}).join("")+'</div>';
+    h+=journalHtml();
+  }
+  if(n.habits){
+    h+='<h3>Nouvelle habitude</h3><form id="fHabit" novalidate><div class="fields one"><label for="hName">Nom<input type="text" id="hName" placeholder="Lecture 10 min" maxlength="60"></label><button class="btn main" type="submit" style="align-self:end">Ajouter</button></div><p class="err" id="eHabit"></p></form>';
+    const ex=new Set(Object.values(state.habits).map(x=>x.name.toLowerCase()));
+    const ideas=HABIT_IDEAS.filter(x=>!ex.has(x.toLowerCase()));
+    if(ideas.length)h+='<div class="chips">'+ideas.map(x=>'<button type="button" data-idea="'+esc(x)+'">+ '+esc(x)+'</button>').join("")+'</div>';
+    if(!ks.length)h+='<p class="muted">Ajoute tes habitudes du matin, puis coche-les chaque jour.</p>';
+    else{
+      h+='<h3>Aujourd\'hui</h3><div class="chips">'+ks.map(c=>{const st=habitStats(state.habits[c.id]);return '<button type="button" data-toggle-today="'+esc(c.id)+'" style="border-style:solid;'+(st.doneToday?"background:var(--mental);color:#fff;border-color:var(--mental)":"")+'">'+(st.doneToday?"✓ ":"")+esc(state.habits[c.id].name)+'</button>'}).join("")+'</div>';
+    }
+  }
+  return h;
+}
+function setTxt(st){
+  const c=st.ex&&state.catalog[st.ex],ex=!!(c&&c.bwReps);
+  return (st.n>1?st.n+" × ":"")+st.reps+" rép."+(st.kg?(ex?" lesté de ":" à ")+fmtNum(st.kg,1)+" kg":"");
+}
+function journalHtml(){
+  const names=new Set(Object.values(state.catalog).filter(e=>e.group==="muscu").map(e=>e.name).sort((a,b)=>a.localeCompare(b,"fr")));
+  Object.values(state.sessions).forEach(s=>(s.sets||[]).forEach(st=>names.add(st.name)));
+  let h='<h3>Journal de séances</h3>';
+  h+='<form id="fSet" novalidate><label for="sEx">Exercice<input type="text" id="sEx" list="exList" placeholder="Squat" maxlength="50" autocomplete="off"></label>';
+  h+='<datalist id="exList">'+Array.from(names).map(x=>'<option value="'+esc(x)+'"></option>').join("")+'</datalist>';
+  h+='<div class="fields"><label for="sKg">Charge (kg)<input type="text" id="sKg" inputmode="decimal" placeholder="100"></label><label for="sReps">Répétitions<input type="text" id="sReps" inputmode="numeric" placeholder="5"></label><label for="sN">Séries<input type="text" id="sN" inputmode="numeric" placeholder="1"></label><label for="sD">Date<input type="date" id="sD" value="'+dayStr(today())+'" max="'+dayStr(today())+'"></label></div>';
+  h+='<button class="btn main" type="submit">Ajouter la série</button><p class="err" id="eSet"></p></form>';
+  h+='<p class="muted">Pas besoin de tester ton max : il est estimé à partir de tes séries habituelles (moyenne des formules d\'Epley et de Brzycki), et ta note de Force prend le meilleur entre tes maxs testés et tes maxs estimés. L\'estimation est fiable jusqu\'à 10 répétitions. Pour les tractions, pompes et dips, mets la charge à 0 sans lest : c\'est ton nombre de répétitions qui compte. Un exercice absent de la liste est enregistré, mais pas encore noté.</p>';
+  const dates=Object.keys(state.sessions).filter(d=>(state.sessions[d].sets||[]).length).sort().reverse().slice(0,10);
+  if(dates.length){
+    h+='<div class="hist">';
+    dates.forEach(d=>{
+      h+='<div style="grid-template-columns:1fr"><strong>'+esc(fmtDay(d))+'</strong></div>';
+      state.sessions[d].sets.forEach(st=>{
+        let est="";
+        const ce=st.ex&&state.catalog[st.ex];
+        if(ce&&ce.ratioBW&&st.kg>0){
+          est="max ≈ "+fmtNum(oneRM(st.kg,st.reps),0)+" kg"+(st.reps>10?" (peu fiable)":"");
+        }
+        h+='<div style="grid-template-columns:minmax(0,1fr) auto auto"><span>'+esc(st.name)+' · '+esc(setTxt(st))+'</span><span class="muted">'+esc(est)+'</span><button type="button" class="x" aria-label="Supprimer cette série" data-del-set="'+esc(d+"|"+st.k)+'">×</button></div>';
+      });
+    });
+    h+='</div>';
+  }
+  return h;
+}
+function exPanel(id){
+  const ex=state.catalog[id],r=exScore(id),p=state.perfs[id],entries=(p&&p.entries?p.entries.slice():[]).sort((a,b)=>b.d.localeCompare(a.d));
+  let h='<div class="head"><div><h2>'+esc(ex.name)+'</h2>'+(r?'<span class="pill">'+esc(levelOf(r.score))+'</span>':'<span class="pill">Pas encore mesuré</span>')+'</div><div class="big">'+bigScore(r?viewScore(ex,r.score):null)+'</div></div>';
+  if(league()==="amateur")h+='<p class="muted">Ligue Élite amateur : 100 = '+esc(ex.amateur?fmtAnchor(ex,ex.amateur.v):"palier 80 de l\'échelle Pro")+(ex.amateur&&ex.amateur.note?" ("+esc(ex.amateur.note)+")":"")+'.</p>';
+  if(league()==="depart")h+='<p class="muted">Ligue Départ : 100 = palier « Entraîné », soit '+esc(fmtAnchor(ex,ex.anchors.find(a=>a[0]===70)?ex.anchors.find(a=>a[0]===70)[1]:0))+'</p>';
+  if(r)h+='<p class="muted">Meilleure perf retenue : '+(r.entry.est&&!ex.bwReps?"max estimé ≈ ":"")+esc(fmtVal(ex,r.entry.v))+(r.entry.est?" d\'après ta série de "+esc(setTxt(r.entry.set)):"")+(ex.ratioBW||ex.splitAngle?" ("+fmtMetric(ex,r.metric)+")":"")+', le '+esc(fmtDay(r.entry.d))+'.</p>';
+  if(ex.muscles)h+='<p class="muted"><strong>Muscles :</strong> '+Object.entries(ex.muscles).sort((x,y)=>y[1]-x[1]).map(([m,w])=>esc(MUSCLES[m]||m)+" "+Math.round(w*100)+" %").join(", ")+'</p>';
+  if(ex.protocol)h+='<p class="muted">'+esc(ex.protocol)+(ex.link?' <a href="'+esc(ex.link)+'">Faire le test</a>':"")+'</p>';
+  if(ex.ratioBW&&!state.profile.poids)h+='<p class="err">Renseigne ton poids de corps dans ta fiche (Moi) pour que la force soit notée.</p>';
+  if(ex.splitAngle&&!state.profile.jambe)h+='<p class="err">Renseigne ta longueur de jambe dans ta fiche (Moi) pour calculer l\'angle de ton grand écart.</p>';
+  h+='<form id="fPerf" novalidate><div class="fields"><label for="pv">Résultat'+(ex.unit?" ("+esc(ex.unit)+")":"")+'<input type="text" id="pv" inputmode="'+(ex.kind==="time"?"text":"decimal")+'" placeholder="'+esc(ex.placeholder||"")+'"></label><label for="pd">Date<input type="date" id="pd" value="'+dayStr(today())+'" max="'+dayStr(today())+'"></label></div><button class="btn main" type="submit">Ajouter le relevé</button><p class="err" id="ePerf"></p></form>';
+  h+='<h3>Paliers</h3><div class="ladder">';
+  const ys=r?r.score:null;
+  let rows=ex.anchors.map(([s,v])=>({s,v,lab:s===100&&ex.record&&ex.record.official===false?"Sommet humain connu":levelOf(s)}));
+  const lg=league(),T=topOf(lg,ex,false);
+  if(lg!=="pro"){const t=amTop(ex);if(!rows.some(x=>Math.abs(x.s-t)<0.5))rows.push({s:t,v:ex.amateur?ex.amateur.v:null,lab:"Élite hors pro"});rows.sort((a,b)=>a.s-b.s)}
+  rows.forEach(x=>{if(Math.abs(x.s-T)<0.5){x.top=true;x.lab+=" · 100 de ta ligue"}});
+  rows.slice().reverse().forEach((x,i,arr)=>{
+    const next=i>0?arr[i-1].s:101,you=ys!=null&&ys>=x.s&&ys<next;
+    const vs=viewScore(ex,x.s),nx=nextL(),beyond=nx&&x.s>topOf(nx,ex,false)+0.5;
+    const shown=beyond?'<span style="font-size:13px">'+esc(LSHORT[LEAGUES[nx].next]||"Pro")+'</span>':vs>100.5?'<span style="color:'+LEAGUES[nx].col+'">↑'+Math.round(vs-100)+'</span>':String(Math.round(vs));
+    const vtxt=x.v==null?"":fmtAnchor(ex,x.v);
+    h+='<div class="'+(you?"you ":"")+(x.top?"pro":"")+'"><b>'+shown+'</b><span>'+esc(x.lab)+(vs>100.5&&!beyond?" · ligue "+esc(LEAGUES[nx].name):"")+(you?" · toi":"")+'</span><span class="v">'+esc(vtxt)+'</span></div>';
+  });
+  h+='</div>';
+  if(ex.record){
+    const rc=ex.record;
+    h+='<p class="rec"><strong>100 = '+esc(rc.text||fmtAnchor(ex,ex.anchors[ex.anchors.length-1][1]))+'</strong>'+(rc.holder?" · "+esc(rc.holder):"")+(rc.when?", "+esc(rc.when):"")+(rc.note?'<br><span class="muted">'+esc(rc.note)+'</span>':"")+(rc.url?'<br><a href="'+esc(rc.url)+'">Source</a>':"")+'</p>';
+  }
+  if(ex.paliersNote)h+='<p class="muted">'+esc(ex.paliersNote)+'</p>';
+  if(entries.length){
+    h+='<h3>Historique</h3><div class="hist">';
+    entries.forEach((e,i)=>{
+      const m=metric(ex,e),s=m==null?null:viewScore(ex,interp(ex.anchors,m));
+      h+='<div><span class="d">'+esc(fmtDay(e.d))+'</span><span>'+esc(fmtVal(ex,e.v))+(ex.splitAngle&&m!=null?" · "+fmtNum(m,0)+"°":"")+'</span><span>'+shortScore(s)+'</span><button type="button" class="x" aria-label="Supprimer le relevé du '+esc(fmtDay(e.d))+'" data-del-perf="'+esc(e.k)+'">×</button></div>';
+    });
+    h+='</div>';
+  }
+  return h;
+}
+function habitPanel(id){
+  const hb=state.habits[id],st=habitStats(hb),set=new Set(hb.days||[]),t=today();
+  let h='<div class="head"><div><h2>'+esc(hb.name)+'</h2><span class="pill">'+esc(levelOf(st.score))+'</span></div><div class="big">'+bigScore(viewHabit(st.score))+'</div></div>';
+  h+='<p class="muted">Série en cours : '+st.streak+' jour'+(st.streak>1?"s":"")+' · '+st.n+' jour'+(st.n>1?"s":"")+' tenus sur les '+st.span+' derniers.</p>';
+  h+='<button type="button" class="btn '+(st.doneToday?"":"main")+'" data-toggle-today="'+esc(id)+'">'+(st.doneToday?"✓ Fait aujourd'hui (annuler)":"Marquer comme fait aujourd'hui")+'</button>';
+  h+='<h3>5 dernières semaines</h3><div class="cal">';
+  const created=hb.created||null;
+  for(let i=34;i>=0;i--){
+    const d=addDays(t,-i),ds=dayStr(d),on=set.has(ds);
+    h+='<button type="button" class="'+(on?"on ":"")+(i===0?"today ":"")+(created&&ds<created?"before":"")+'" data-day="'+ds+'" data-habit="'+esc(id)+'" aria-pressed="'+on+'" aria-label="'+esc(fmtDay(ds))+(on?", fait":", pas fait")+'">'+d.getDate()+'</button>';
+  }
+  h+='</div>';
+  h+='<div class="ladder">';
+  [[100,"3 ans sans interruption"],[90,"1 an"],[80,"3 mois"],[70,"1 mois"],[50,"1 semaine"]].forEach(([s,l])=>{const sh=shortScore(viewHabit(s)),tp=Math.abs(s-topOf(league(),null,true))<0.5;h+='<div class="'+(tp?"pro":"")+'"><b>'+sh+'</b><span>Série de '+l+'</span><span class="v"></span></div>'});
+  h+='</div><p class="muted">Si tu casses ta série, ta régularité sur 30 jours sert de filet : jusqu\'à 65 si tu tiens 9 jours sur 10.</p>';
+  if(state.confirmDel===id)h+='<div class="fields"><button type="button" class="btn danger" data-del-habit="'+esc(id)+'">Confirmer la suppression</button><button type="button" class="btn" data-cancel-del="1">Annuler</button></div>';
+  else h+='<button type="button" class="btn small danger" data-ask-del="'+esc(id)+'" style="align-self:flex-start">Supprimer cette habitude</button>';
+  return h;
+}
+function renderViews(){
+  const lg=league();
+  $("#vDepart").setAttribute("aria-pressed",String(lg==="depart"));$("#vAmateur").setAttribute("aria-pressed",String(lg==="amateur"));$("#vPro").setAttribute("aria-pressed",String(lg==="pro"));
+  $("#legRing").textContent=lg==="pro"?"Cercle = record du monde":"Cercle = 100 de ta ligue ; au-delà, la branche est mesurée en ligue "+LEAGUES[LEAGUES[lg].next].name;
+}
+function render(){renderViews();renderCrumbs();renderMap();renderList();renderPanel()}
+
+function showBanner(msg){const b=$("#banner");if(!msg){b.hidden=true;return}b.textContent=msg;b.hidden=false}
+function errText(e){
+  const c=e&&e.code;
+  if(c==="quota_exceeded")return "Espace de stockage plein : supprime d'anciens relevés.";
+  if(c==="invalid_argument")return "Tu ne peux pas modifier ces données avec ce niveau d'accès.";
+  if(c==="revoked"||c==="not_granted"||c==="capability_disabled")return "La sauvegarde n'est pas disponible dans cette vue.";
+  return "La sauvegarde a échoué. Réessaie dans un instant.";
+}
+const STORE_KEY="carte-stats-v1";
+let store={perfs:{},habits:{},sessions:{},profile:{}};
+function blankStore(){return {perfs:{},habits:{},sessions:{},profile:{}}}
+function loadStore(){
+  try{const r=localStorage.getItem(STORE_KEY);if(r){const x=JSON.parse(r);store=Object.assign(blankStore(),x)}}
+  catch(e){showBanner("Impossible de lire tes données sur cet appareil.")}
+}
+function persist(){
+  try{localStorage.setItem(STORE_KEY,JSON.stringify(store));return true}
+  catch(e){showBanner("Enregistrement impossible : le stockage de l'appareil est plein ou bloqué.");return false}
+}
+function save(path,data){
+  const i=path.indexOf("/"),c=path.slice(0,i),id=path.slice(i+1),copy=JSON.parse(JSON.stringify(data));
+  if(c==="profile")store.profile=copy;else{store[c]=store[c]||{};store[c][id]=copy}
+  return persist()?Promise.resolve():Promise.reject();
+}
+function remove(path){
+  const i=path.indexOf("/"),c=path.slice(0,i),id=path.slice(i+1);
+  if(store[c])delete store[c][id];
+  return persist()?Promise.resolve():Promise.reject();
+}
+function syncState(){state.perfs=store.perfs;state.habits=store.habits;state.sessions=store.sessions;state.profile=store.profile}
+function exportData(){
+  const blob=new Blob([JSON.stringify({app:"carte-stats",version:1,exported:new Date().toISOString(),data:store})],{type:"application/json"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="carte-stats-"+dayStr(today())+".json";
+  document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500);
+}
+function slug(s){return (s.normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")||"h").slice(0,40)+"-"+Date.now().toString(36)}
+
+function go(id){state.node=id;state.sel=null;state.confirmDel=null;render();window.scrollTo({top:0,behavior:"smooth"})}
+function pick(type,id){
+  if(type==="node"){go(id);return}
+  const same=state.sel&&state.sel.type===type&&state.sel.id===id;
+  state.sel=same?null:{type,id};state.confirmDel=null;render();
+  if(!same){const p=$("#panel");if(p.scrollIntoView)p.scrollIntoView({behavior:"smooth",block:"start"})}
+}
+function toggleDay(hid,ds){
+  const hb=state.habits[hid];if(!hb)return;
+  const days=new Set(hb.days||[]);days.has(ds)?days.delete(ds):days.add(ds);
+  const next=Object.assign({},hb,{days:Array.from(days).sort()});
+  if(next.created&&ds<next.created)next.created=ds;
+  state.habits[hid]=next;render();
+  save("habits/"+hid,{name:next.name,created:next.created,days:next.days}).catch(()=>{});
+}
+
+document.addEventListener("click",ev=>{
+  const t=ev.target.closest("[data-export],[data-import-ok],[data-import-cancel],[data-view],[data-go],[data-type],[data-idea],[data-toggle-today],[data-day],[data-del-perf],[data-del-set],[data-ask-del],[data-del-habit],[data-cancel-del]");
+  if(!t)return;
+  const d=t.dataset;
+  if(d.export){exportData();return}
+  if(d.importOk){const x=state.pendingImport;state.pendingImport=null;store=Object.assign(blankStore(),x.data);if(persist()){syncState();go("moi")}return}
+  if(d.importCancel){state.pendingImport=null;renderPanel();return}
+  if(d.view){
+    const vue=["depart","amateur","pro"].includes(d.view)?d.view:"depart";if(league()===vue)return;
+    state.profile=Object.assign({},state.profile,{vue});render();
+    save("profile/main",state.profile).catch(()=>{});return;
+  }
+  if(d.go){go(d.go);return}
+  if(d.type){pick(d.type,d.id);return}
+  if(d.idea){addHabit(d.idea);return}
+  if(d.toggleToday){toggleDay(d.toggleToday,dayStr(today()));return}
+  if(d.day){toggleDay(d.habit,d.day);return}
+  if(d.delPerf){
+    const id=state.sel&&state.sel.id,p=state.perfs[id];if(!p)return;
+    const entries=(p.entries||[]).filter(e=>e.k!==d.delPerf);
+    state.perfs[id]={entries};render();save("perfs/"+id,{entries}).catch(()=>{});return;
+  }
+  if(d.delSet){
+    const [ds,k]=d.delSet.split("|"),ss=state.sessions[ds];if(!ss)return;
+    const sets=(ss.sets||[]).filter(x=>x.k!==k);
+    state.sessions[ds]={d:ds,sets};render();
+    (sets.length?save("sessions/"+ds,{d:ds,sets}):remove("sessions/"+ds)).catch(()=>{});return;
+  }
+  if(d.askDel){state.confirmDel=d.askDel;renderPanel();return}
+  if(d.cancelDel){state.confirmDel=null;renderPanel();return}
+  if(d.delHabit){const id=d.delHabit;delete state.habits[id];state.sel=null;state.confirmDel=null;render();remove("habits/"+id).catch(()=>{});return}
+});
+function addHabit(name){
+  name=String(name).trim();const e=$("#eHabit");
+  if(!name){if(e)e.textContent="Donne un nom à l'habitude.";return}
+  if(Object.values(state.habits).some(h=>h.name.toLowerCase()===name.toLowerCase())){if(e)e.textContent="Cette habitude existe déjà.";return}
+  const id=slug(name),doc={name,created:dayStr(today()),days:[]};
+  state.habits[id]=doc;const inp=$("#hName");if(inp)inp.value="";render();
+  save("habits/"+id,doc).catch(()=>{});
+}
+document.addEventListener("submit",ev=>{
+  ev.preventDefault();
+  const f=ev.target;
+  if(f.id==="fHabit"){addHabit($("#hName").value);return}
+  if(f.id==="fProfile"){
+    const prenom=$("#pPrenom").value.trim().slice(0,30),e=$("#eProfile");
+    const num=id=>{const v=$(id).value.trim().replace(",",".");return v?Number(v):null};
+    const poids=num("#pPoids"),taille=num("#pTaille"),jambe=num("#pJambe");
+    if(poids!=null&&!(poids>=30&&poids<=250)){e.textContent="Entre un poids entre 30 et 250 kg.";return}
+    if(taille!=null&&!(taille>=100&&taille<=250)){e.textContent="Entre une taille entre 100 et 250 cm.";return}
+    if(jambe!=null&&!(jambe>=40&&jambe<=130)){e.textContent="Entre une longueur de jambe entre 40 et 130 cm.";return}
+    if(jambe!=null&&taille!=null&&jambe>=taille){e.textContent="La longueur de jambe doit être plus petite que ta taille.";return}
+    e.textContent="";
+    state.profile=Object.assign({},state.profile,{prenom,poids,taille,jambe});render();
+    save("profile/main",state.profile).then(()=>{const x=$("#eProfile");if(x){x.style.color="var(--muted)";x.textContent="Profil enregistré."}}).catch(()=>{});
+    return;
+  }
+  if(f.id==="fSet"){
+    const e=$("#eSet"),name=$("#sEx").value.trim().slice(0,50);
+    const num=id=>{const v=$(id).value.trim().replace(",",".");return v===""?null:Number(v)};
+    let kg=num("#sKg"),reps=num("#sReps"),n=num("#sN");const ds=$("#sD").value;
+    if(!name){e.textContent="Indique l'exercice.";return}
+    const exId=liftId(name),exC=exId?state.catalog[exId]:null;
+    if(kg==null)kg=0;
+    if(isNaN(kg)||kg<0||kg>600){e.textContent="Entre une charge entre 0 et 600 kg.";return}
+    if(reps==null||!Number.isInteger(reps)||reps<1||reps>200){e.textContent="Entre un nombre de répétitions (1 ou plus).";return}
+    if(n==null)n=1;
+    if(!Number.isInteger(n)||n<1||n>30){e.textContent="Entre un nombre de séries entre 1 et 30.";return}
+    if(exC&&exC.ratioBW&&kg===0){e.textContent="Entre la charge soulevée pour cet exercice.";return}
+    if(!ds||ds>dayStr(today())){e.textContent="Choisis une date passée ou aujourd'hui.";return}
+    const st={k:Date.now().toString(36)+Math.random().toString(36).slice(2,6),name:exC?exC.name:name,ex:exId,kg,reps,n};
+    if(state.profile.poids)st.bw=state.profile.poids;
+    const sets=((state.sessions[ds]&&state.sessions[ds].sets)||[]).concat([st]).slice(-80);
+    state.sessions[ds]={d:ds,sets};
+    $("#sKg").value="";$("#sReps").value="";$("#sN").value="";e.textContent="";
+    render();save("sessions/"+ds,{d:ds,sets}).catch(()=>{});return;
+  }
+  if(f.id==="fPerf"){
+    const id=state.sel.id,ex=state.catalog[id],e=$("#ePerf");
+    const v=parseVal(ex,$("#pv").value),ds=$("#pd").value;
+    if(v==null){e.textContent="Entre ton résultat.";return}
+    if(isNaN(v)||(!ex.allowNeg&&v<0)){e.textContent=ex.kind==="time"?"Format attendu : 13,4 ou 23:45 ou 1:02:00.":"Entre un nombre valide.";return}
+    if(!ds||ds>dayStr(today())){e.textContent="Choisis une date passée ou aujourd'hui.";return}
+    const entry={k:Date.now().toString(36)+Math.random().toString(36).slice(2,6),d:ds,v};
+    if(ex.ratioBW&&state.profile.poids)entry.bw=state.profile.poids;
+    if(ex.splitAngle&&state.profile.jambe)entry.leg=state.profile.jambe;
+    const entries=((state.perfs[id]&&state.perfs[id].entries)||[]).concat([entry]).slice(-300);
+    state.perfs[id]={entries};$("#pv").value="";render();
+    save("perfs/"+id,{entries}).catch(()=>{});
+  }
+});
+document.addEventListener("change",ev=>{
+  if(ev.target.id!=="impFile")return;
+  const f=ev.target.files&&ev.target.files[0];if(!f)return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{const x=JSON.parse(rd.result);if(!x||x.app!=="carte-stats"||!x.data||typeof x.data!=="object")throw 0;state.pendingImport=x;renderPanel()}
+    catch(e){const el=$("#eImport");if(el)el.textContent="Ce fichier n'est pas une sauvegarde de Carte de stats."}
+  };
+  rd.readAsText(f);
+});
+document.addEventListener("input",ev=>{const f=ev.target.closest("form");if(f){const e=f.querySelector(".err");if(e&&e.id!=="eProfile")e.textContent=""}});
+
+function init(){
+  loadStore();
+  const c={};
+  Object.entries(window.CATALOG||{}).forEach(([id,d])=>{const x=Object.assign({},d,{id});x.anchors=(x.anchors||[]).map(a=>Array.isArray(a)?a:[a.s,a.v]).sort((m,n)=>m[0]-n[0]);if(x.anchors.length>1)c[id]=x});
+  state.catalog=c;state.meta=window.CATALOG_META||null;
+  syncState();render();
+  if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
+  if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
+}
+init();
+</script>
+</body>
+</html>
